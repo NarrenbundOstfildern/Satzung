@@ -1,0 +1,38 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{fontspec}
+
+\geometry{a4paper, left=25mm, right=25mm, top=25mm, bottom=20mm, }
+
+\setmainfont{SourceSerif4}[
+    Path=./SourceSerif4FontFiles/,
+    Extension = .ttf,
+    UprightFont=*-Regular,
+    BoldFont=*-Bold,
+    ItalicFont=*-Italic,
+    BoldItalicFont=*-BoldItalic
+    ]
+
+\begin{document}
+
+\setcounter{secnumdepth}{-1}
+\renewcommand{\contentsname}{Inhaltsverzeichnis}
+\tableofcontents
+
+\newpage
+
+\input{satzung.tex}
+\newpage
+\input{geschaeftsordnung.tex}
+\newpage
+\input{haesordnung.tex}
+\newpage
+\input{beitragsordnung.tex}
+\newpage
+\input{arbeitsdienstordnung.tex}
+\newpage
+\input{jugendordnung.tex}
+\newpage
+
+\end{document}
