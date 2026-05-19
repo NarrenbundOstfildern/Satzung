@@ -1,0 +1,234 @@
+name: Build Satzung PDFs
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Find last tag
+        id: last_tag
+        run: |
+          LAST_TAG=$(git tag --sort=-creatordate | head -n 1)
+          echo "last_tag=${LAST_TAG}" >> $GITHUB_OUTPUT
+          echo "last tag: ${LAST_TAG}"
+
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-xetex \
+            texlive-latex-extra \
+            texlive-latex-recommended \
+            texlive-plain-generic \
+            latexdiff \
+            zip
+
+      - name: Set date as tag
+        id: tag
+        run: |
+          TAG="$(date +'%Y-%m-%d')"
+          COUNT=0
+          FINAL_TAG=$TAG
+          while git rev-parse "$FINAL_TAG" >/dev/null 2>&1; do
+            COUNT=$((COUNT + 1))
+            FINAL_TAG="${TAG}-${COUNT}"
+          done
+          echo "tag=${FINAL_TAG}" >> $GITHUB_OUTPUT
+          echo "Tag wird: ${FINAL_TAG}"
+
+      - name: Create output directory
+        run: mkdir -p output
+
+      - name: Compile Satzung & Ordnungswerk with cover sheet
+        run: |
+          cp main.tex main_orig.tex
+          python3 - <<'PYEOF'
+          import re
+
+          with open("main.tex", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          deckblatt_code = r"""
+          % Deckblatt einbinden
+          \usepackage{pdfpages}
+          """
+          insert_after_begin = (
+              r"\includepdf[pages=-]{deckblatt.pdf}" + "\n\n"
+          )
+
+          if r"\usepackage{pdfpages}" not in content:
+              content = content.replace(
+                  r"\begin{document}",
+                  r"\usepackage{pdfpages}" + "\n" + r"\begin{document}"
+              )
+
+          content = content.replace(
+              r"\begin{document}",
+              r"\begin{document}" + "\n" + insert_after_begin
+          )
+
+          with open("main.tex", "w", encoding="utf-8") as f:
+              f.write(content)
+          PYEOF
+
+          xelatex -interaction=nonstopmode -halt-on-error main.tex
+          xelatex -interaction=nonstopmode -halt-on-error main.tex
+          cp main.pdf output/Satzung_und_Ordnungswerk.pdf
+
+          mv main_orig.tex main.tex
+
+      - name: Compile single documents
+        run: |
+          declare -A DOCS=(
+            ["satzung"]="Satzung"
+            ["geschaeftsordnung"]="Geschaeftsordnung"
+            ["haesordnung"]="Haeusordnung"
+            ["beitragsordnung"]="Beitragsordnung"
+            ["arbeitsdienstordnung"]="Arbeitsdienstordnung"
+            ["jugendordnung"]="Jugendordnung"
+          )
+
+          for TEX_BASE in "${!DOCS[@]}"; do
+            PDF_NAME="${DOCS[$TEX_BASE]}"
+            TEX_FILE="${TEX_BASE}.tex"
+
+            if [ ! -f "$TEX_FILE" ]; then
+              echo "$TEX_FILE not found, will be skipped."
+              continue
+            fi
+
+            echo "Compiling: $TEX_FILE → ${PDF_NAME}.pdf"
+
+            cat > "build_${TEX_BASE}.tex" <<TEXEOF
+          \documentclass[a4paper,10pt]{article}
+          \usepackage[utf8]{inputenc}
+          \usepackage{geometry}
+          \usepackage{fontspec}
+
+          \geometry{a4paper, left=25mm, right=25mm, top=25mm, bottom=20mm}
+
+          \setmainfont{SourceSerif4}[
+              Path=./SourceSerif4FontFiles/,
+              Extension = .ttf,
+              UprightFont=*-Regular,
+              BoldFont=*-Bold,
+              ItalicFont=*-Italic,
+              BoldItalicFont=*-BoldItalic
+              ]
+
+          \begin{document}
+          \setcounter{secnumdepth}{-1}
+          \input{${TEX_FILE}}
+          \end{document}
+          TEXEOF
+
+            xelatex -interaction=nonstopmode -halt-on-error "build_${TEX_BASE}.tex"
+            xelatex -interaction=nonstopmode -halt-on-error "build_${TEX_BASE}.tex"
+            cp "build_${TEX_BASE}.pdf" "output/${PDF_NAME}.pdf"
+            echo "${PDF_NAME}.pdf created."
+          done
+
+      - name: Create diff PDF against last tag
+        run: |
+          LAST_TAG="${{ steps.last_tag.outputs.last_tag }}"
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag found, creating empty diff PDF."
+            cat > diff_empty.tex <<'TEXEOF'
+          \documentclass[a4paper,10pt]{article}
+          \usepackage[utf8]{inputenc}
+          \begin{document}
+          No previous release found. This is the first version.
+          \end{document}
+          TEXEOF
+            pdflatex -interaction=nonstopmode diff_empty.tex
+            cp diff_empty.pdf output/Satzung_und_Ordnungswerk_diff.pdf
+          else
+            echo "Creating diff against tag: $LAST_TAG"
+
+            mkdir -p old
+
+            git show "${LAST_TAG}:main.tex" > old/main.tex 2>/dev/null || cp main.tex old/main.tex
+
+            for TEX_BASE in satzung geschaeftsordnung haesordnung beitragsordnung arbeitsdienstordnung jugendordnung; do
+              git show "${LAST_TAG}:${TEX_BASE}.tex" > "old/${TEX_BASE}.tex" 2>/dev/null || cp "${TEX_BASE}.tex" "old/${TEX_BASE}.tex"
+            done
+
+            latexdiff --flatten old/main.tex main.tex > diff_main.tex 2>/dev/null || cp main.tex diff_main.tex
+
+            xelatex -interaction=nonstopmode diff_main.tex || true
+            xelatex -interaction=nonstopmode diff_main.tex || true
+
+            if [ -f diff_main.pdf ]; then
+              cp diff_main.pdf output/Satzung_und_Ordnungswerk_diff.pdf
+              echo "Diff-PDF created successfully."
+            else
+              echo "Compilation failed, creating fallback."
+              cat > diff_fallback.tex <<'TEXEOF'
+          \documentclass[a4paper]{article}
+          \begin{document}
+          The diff PDF could not be created. Please check manually.
+          \end{document}
+          TEXEOF
+              pdflatex -interaction=nonstopmode diff_fallback.tex
+              cp diff_fallback.pdf output/Satzung_und_Ordnungswerk_diff.pdf
+            fi
+          fi
+
+      - name: Create ZIP archive of PDFs
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          cd output
+          zip "../Satzung_und_Ordnungswerk_${TAG}.zip" *.pdf
+          cd ..
+          echo "ZIP created: Satzung_und_Ordnungswerk_${TAG}.zip"
+          ls -lh "Satzung_und_Ordnungswerk_${TAG}.zip"
+
+      - name: Push Git Tag
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG automatically created by GitHub Actions"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Stand-${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Satzung & Ordnungswerk Stand - ${{ steps.tag.outputs.tag }}
+
+            ### Enthaltene Dokumente
+            | Datei | Inhalt |
+            |-------|--------|
+            | `Satzung_und_Ordnungswerk.pdf` | Alle Dokumente inkl. Deckblatt |
+            | `Satzung.pdf` | Satzung |
+            | `Geschaeftsordnung.pdf` | Geschäftsordnung |
+            | `Haeusordnung.pdf` | Häsordnung |
+            | `Beitragsordnung.pdf` | Beitragsordnung |
+            | `Arbeitsdienstordnung.pdf` | Arbeitsdienstordnung |
+            | `Jugendordnung.pdf` | Jugendordnung |
+            | `Satzung_und_Ordnungswerk_diff.pdf` | Änderungen gegenüber dem letzten Release |
+
+            > Die ZIP-Datei enthält alle obigen PDFs.
+          files: Satzung_und_Ordnungswerk_${{ steps.tag.outputs.tag }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
