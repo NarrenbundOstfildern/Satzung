@@ -96,7 +96,7 @@ jobs:
           declare -A DOCS=(
             ["satzung"]="Satzung"
             ["geschaeftsordnung"]="Geschaeftsordnung"
-            ["haesordnung"]="Haeusordnung"
+            ["haesordnung"]="Haesordnung"
             ["beitragsordnung"]="Beitragsordnung"
             ["arbeitsdienstordnung"]="Arbeitsdienstordnung"
             ["jugendordnung"]="Jugendordnung"
@@ -220,7 +220,7 @@ jobs:
             | `Satzung_und_Ordnungswerk.pdf` | Alle Dokumente inkl. Deckblatt |
             | `Satzung.pdf` | Satzung |
             | `Geschaeftsordnung.pdf` | Geschäftsordnung |
-            | `Haeusordnung.pdf` | Häsordnung |
+            | `Haesordnung.pdf` | Häsordnung |
             | `Beitragsordnung.pdf` | Beitragsordnung |
             | `Arbeitsdienstordnung.pdf` | Arbeitsdienstordnung |
             | `Jugendordnung.pdf` | Jugendordnung |
