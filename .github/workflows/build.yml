@@ -119,6 +119,7 @@ jobs:
           \usepackage[utf8]{inputenc}
           \usepackage{geometry}
           \usepackage{fontspec}
+          \usepackage[hidelinks]{hyperref}
 
           \geometry{a4paper, left=25mm, right=25mm, top=25mm, bottom=20mm}
 
