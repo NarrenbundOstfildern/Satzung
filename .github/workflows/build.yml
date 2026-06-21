@@ -131,6 +131,7 @@ jobs:
               BoldItalicFont=*-BoldItalic
               ]
 
+          \input{commands.tex}
           \begin{document}
           \setcounter{secnumdepth}{-1}
           \input{${TEX_FILE}}
